@@ -1,0 +1,234 @@
+---
+title: "Code for project"
+author: "Charles Alba"
+date: "January 30, 2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r,warning=FALSE,message=FALSE, include=FALSE}
+library(data.table)
+library(rvest)
+library(reshape2)
+library(jsonlite)
+library(stringr)
+library(lubridate)
+library(geosphere)
+library(dplyr)
+#install.packages("tidyverse")
+#library(tidyverse)
+library(rmarkdown)
+library(ggplot2)
+library(plyr)
+library(lsmeans)
+library(multcompView)
+library(lmtest)
+library(nortest)
+library(MASS)
+library(olsrr)
+library(nortest)
+library(lsmeans)
+library(car)
+library(multcompView)
+library(lme4)
+library(lmerTest)
+library(text2vec)
+library(pdist)
+library(olsrr)
+library(MASS)
+library(mice)
+library(Amelia)
+library(AER)
+library(bit64)
+```
+
+All these components were done by Charles Alba
+
+Read csv file
+```{r}
+imputed_data <- read.csv(file = 'Proj/Volume/Data/processed/covid_and_behavioral.csv')
+GHS.index <- read.csv(file = 'Proj/Volume/Data/raw/covid_and_behavioral.csv')
+```
+
+
+obtain the correlation plot
+```{r}
+c<-subset(imputed_data, select = c( idv, pdi, mas,ivr,ltowvs ,uai))
+c<-cor(c)
+library(corrplot)
+corrplot(c, method="circle", order="hclust", tl.col="black")
+```
+
+
+# Analysis
+
+Apply poisson regression with the entire dataset. 
+```{r}
+imp_regre<-glm(formula = lambda~pdi+idv+mas+uai+ltowvs+ivr, family = poisson, data=timputed_data , offset=log(population/1000000))
+summary(imp_regre)
+```
+
+
+Test for the assumptions 
+```{r}
+model <- lm(log(lambda) ~ idv, data = timputed_data)
+plot(model,1)
+dispersiontest(imp_regre)
+```
+
+
+
+# performing train-test split
+```{r}
+GHS_data<- read.csv(file='GHS.csv')
+timputed_data<-merge(timputed_data, GHS_data, by.x = "location", by.y = "country")
+smp_size <- floor(0.7 * nrow(timputed_data))
+train_ind <- sample(seq_len(nrow(timputed_data)), size = smp_size)
+
+train <- timputed_data[train_ind, ]
+test <- timputed_data[-train_ind, ]
+```
+
+Training our model
+```{r}
+regre<-glm(formula = lambda~pdi+idv+mas+uai+ltowvs+ivr, family = poisson, data=train , offset=log(population/1000000))
+summary(regre)
+```
+
+
+Training the GHS model
+```{r}
+train$neg_ghs<- (train$GHS.index)
+regre_GHS<-glm(formula = lambda~(neg_ghs), family = poisson, data=train , offset=log(population/1000000))
+summary(regre_GHS)
+```
+
+
+Comparisons between the model (without any basis of direction for the GHS model)
+```{r}
+actual_behavior = test$lambda
+predy_behavior  = predict(regre, newdata=test, interval='prediction')
+
+test$pred<-predy_behavior
+RSS = sum((actual_behavior - predy_behavior)^2)
+MSE_act=RSS/nrow(test)
+```
+
+
+Comparisons between the models with the directional basis of the GHS model 
+```{r}
+actual=test$lambda
+predy_GHS  = exp(0.4774393-0.0545232*(test$GHS.index)+log(test$population/1000000))
+RSS_GHS = sum((actual - predy_GHS)^2)
+MSE_GHS=RSS_GHS/nrow(test)
+```
+
+
+```{r}
+compare<-MSE_GHS-MSE_act #our model is better
+```
+
+
+# Graphs to visualize our model. 
+
+parameter $r_i$
+
+```{r}
+timputed_data$r_i<-(timputed_data$total_cases/timputed_data$population)*1000000
+logr_i<-log(timputed_data$r_i)
+g= ggplot(timputed_data, aes(idv, logr_i, label=location))
+```
+
+
+```{r}
+g + geom_jitter()+geom_text(color="green4")+labs(x= "individualism index", y = "log(COVID cases per million population)")+ geom_smooth(method = "lm")
+```
+
+```{r}
+g= ggplot(timputed_data, aes(pdi, logr_i, label=location))
+
+g + geom_jitter()+geom_text(color="green4")+labs(x= "power distance index", y = "log(COVID cases per million population)")+ geom_smooth(method = "lm")
+```
+
+```{r}
+g= ggplot(timputed_data, aes(mas, logr_i, label=location))
+
+g + geom_jitter()+geom_text(color="red3")+labs(x= "masculinity index", y = "log(COVID  cases per million population)")+ geom_smooth(method = "lm")
+```
+
+
+```{r}
+g= ggplot(timputed_data, aes(uai, logr_i, label=location))
+
+g + geom_jitter()+geom_text(color="green4")+labs(x= "uncertainty avoidance index", y = "log(COVID  cases per million population)")+ geom_smooth(method = "lm")
+```
+
+
+```{r}
+g= ggplot(timputed_data, aes(ltowvs, logr_i, label=location))
+
+g + geom_jitter()+geom_text(color="green4")+labs(x= "long-term orientation index", y = "log(COVID  cases per million population)")+ geom_smooth(method = "lm")
+```
+
+
+```{r}
+g= ggplot(timputed_data, aes(ivr, logr_i, label=location))
+
+g + geom_jitter()+geom_text(color="green4")+labs(x= "indulgence index", y = "log(COVID  cases per million population)")+ geom_smooth(method = "lm")
+```
+
+
+```{r}
+write.csv(timputed_data, file = 'covid_and_behaviorial_data.csv')
+```
+
+Now for $\lambda$
+
+
+
+```{r}
+g= ggplot(timputed_data, aes(idv, log(lambda), label=location))
+g + geom_jitter()+geom_text(color="green4")+labs(x= "individualism index", y = "log(lambda)")+ geom_smooth(method = "lm")
+```
+
+```{r}
+g= ggplot(timputed_data, aes(pdi, log(lambda), label=location))
+
+g + geom_jitter()+geom_text(color="green4")+labs(x= "power distance index", y = "log(lambda)")+ geom_smooth(method = "lm")
+```
+
+```{r}
+g= ggplot(timputed_data, aes(mas, log(lambda), label=location))
+
+g + geom_jitter()+geom_text(color="green4")+labs(x= "masculinity index", y = "log(lambda)")+ geom_smooth(method = "lm")
+```
+
+
+```{r}
+g= ggplot(timputed_data, aes(uai, log(lambda), label=location))
+
+g + geom_jitter()+geom_text(color="green4")+labs(x= "uncertainty avoidance index", y = "log(lambda)")+ geom_smooth(method = "lm")
+```
+
+
+```{r}
+g= ggplot(timputed_data, aes(ltowvs, log(lambda), label=location))
+
+g + geom_jitter()+geom_text(color="green4")+labs(x= "long-term orientation index", y = "log(lambda)")+ geom_smooth(method = "lm")
+```
+
+
+```{r}
+g= ggplot(timputed_data, aes(ivr, log(lambda), label=location))
+
+g + geom_jitter()+geom_text(color="red3")+labs(x= "indulgence index", y = "log(lambda))")+ geom_smooth(method = "lm")
+```
+
+
+
