@@ -1,0 +1,111 @@
+---
+title: "Code for project"
+author: "Charles Alba and Manasvi"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r,warning=FALSE,message=FALSE, include=FALSE}
+library(data.table)
+library(rvest)
+library(reshape2)
+library(jsonlite)
+library(stringr)
+library(lubridate)
+library(geosphere)
+library(dplyr)
+#install.packages("tidyverse")
+#library(tidyverse)
+library(rmarkdown)
+library(ggplot2)
+library(plyr)
+library(lsmeans)
+library(multcompView)
+library(lmtest)
+library(nortest)
+library(MASS)
+library(olsrr)
+library(nortest)
+library(lsmeans)
+library(car)
+library(multcompView)
+library(lme4)
+library(lmerTest)
+library(text2vec)
+library(pdist)
+library(olsrr)
+library(MASS)
+library(mice)
+library(Amelia)
+library(AER)
+library(bit64)
+```
+
+# Read (By Manasvi)
+Read csv file 
+```{r}
+sixdimensions <- read.csv(file = 'dimensions.csv')
+covid_data<- read.csv(file='owid-covid-data.csv')
+#population<-read.csv(file='population.csv')
+```
+
+# Filter (by Manasvi)
+
+Filter to the relevant dates and merge with the behavioral dataset
+
+```{r}
+covid_data<-covid_data[covid_data$date=="2020-12-14",]
+new_combined_data<-merge(covid_data, sixdimensions, by.x = "location", by.y = "country")
+
+```
+
+# Computational (By Charles and Manasvi)
+
+compute the date in which the first case was reported in $i^{th}$ country
+```{r}
+#data<-merge(comb_data, population, by.x = "location", by.y = "country")
+covid_data_total<- read.csv(file='owid-covid-data.csv')
+covid_data_total<-data.table(covid_data_total)
+covid_data_total<-covid_data_total[!is.na(covid_data_total$total_cases), ]
+covid_data_total<-covid_data_total[covid_data_total$total_cases != 0, ]
+covid_first_date<-covid_data_total[!duplicated(covid_data_total$location), ] 
+names(covid_first_date)[names(covid_first_date) == "date"] <- "first_date"
+covid_first_date<-data.table(covid_first_date)
+covid_first_date<-subset(covid_first_date, select = c(location, first_date))
+new_combined_data<-merge(new_combined_data, covid_first_date, by.x = "location", by.y = "location")
+
+```
+
+
+compute the parameters $t_i$, $\lambda_i$, $r_i$
+```{r}
+new_combined_data$date<-as.Date(as.character(new_combined_data$date))
+new_combined_data$first_date<-as.Date(as.character(new_combined_data$first_date))
+new_combined_data$time<-new_combined_data$date-new_combined_data$first_date
+new_combined_data$time<-as.numeric(new_combined_data$time)
+new_combined_data$lambda<-(new_combined_data$total_cases/new_combined_data$time)
+new_combined_data$r_i<-(new_combined_data$total_cases/new_combined_data$population)*1000000
+```
+
+# CART imputation (by Charles)
+
+Impute the missing data
+
+```{r}
+interested_values<-subset(new_combined_data, select = c( idv, pdi, mas,ivr,ltowvs ,uai,location))
+imputed_Data <-mice(interested_values, maxit = 50, method = "cart", seed = 500)
+imputed_data<-data.table(complete(imputed_Data))
+countries_n_rates<-subset(new_combined_data, select=c(total_cases, location, lambda, population))
+timputed_data<-merge(imputed_data, countries_n_rates, by.x = "location", by.y = "location")
+```
+
+```{r}
+write.csv(timputed_data, file = 'Proj/volume/data/processed/covid_and_behaviorial_data.csv')
+```
+
