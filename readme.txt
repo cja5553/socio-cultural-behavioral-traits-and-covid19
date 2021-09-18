@@ -1,4 +1,4 @@
 src for codes
 volume for datasets
 
-This publication is forthcoming in the Journal of Humanities and Applied Social Sciences. 
+Published in the Journal of Humanities and Applied Social Sciences. 
